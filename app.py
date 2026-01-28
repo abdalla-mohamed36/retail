@@ -6,20 +6,20 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_squared_error
 
-# =========================
-# PAGE CONFIG
-# =========================
 st.set_page_config(page_title="Retail Price Optimization", layout="wide")
 
-# =========================
-# STRONG CSS
-# =========================
 st.markdown("""
 <style>
 .stApp {
     background: linear-gradient(180deg, #0b1c2d 0%, #ffffff 35%);
 }
-h1, h2, h3 { color: #0b4f9a; font-weight: 700; }
+h1, h2, h3 {
+    color: #0b4f9a;
+    font-weight: 700;
+}
+.black-text {
+    color: black !important;
+}
 [data-testid="stSidebar"] {
     background-color: #000814;
     color: white;
@@ -36,9 +36,6 @@ h1, h2, h3 { color: #0b4f9a; font-weight: 700; }
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# LOAD DATA
-# =========================
 @st.cache_data
 def load_data():
     df = pd.read_csv("AI and ML.csv")
@@ -48,22 +45,22 @@ def load_data():
 
 df = load_data()
 
-# =========================
-# SIDEBAR
-# =========================
 page = st.sidebar.selectbox("Page", ["Home", "EDA", "Elasticity"])
 
-# =========================
-# HOME
-# =========================
 if page == "Home":
     st.title("Retail Price Optimization")
-    st.dataframe(df.head())
-    st.write("This app estimates **price elasticity of demand** using real transaction data.")
 
-# =========================
-# EDA
-# =========================
+    st.markdown('<h3 class="black-text">Sample of Dataset</h3>', unsafe_allow_html=True)
+    st.dataframe(df.head())
+
+    summary = df[["Original_Price", "Selling_Price", "Quantity", "Total_Amount"]].agg(
+        ["min", "mean", "max"]
+    ).T
+    summary.columns = ["Minimum", "Average", "Maximum"]
+
+    st.markdown('<h3 class="black-text">Key Statistics</h3>', unsafe_allow_html=True)
+    st.dataframe(summary)
+
 elif page == "EDA":
     st.title("Exploratory Data Analysis")
 
@@ -79,15 +76,34 @@ elif page == "EDA":
     st.pyplot(fig)
     plt.close()
 
-# =========================
-# ELASTICITY
-# =========================
+    fig = plt.figure()
+    plt.plot(monthly["Date"].astype(str), monthly["rev"])
+    plt.xticks(rotation=45)
+    plt.title("Monthly Revenue")
+    st.pyplot(fig)
+    plt.close()
+
+    top_products = df.groupby("Product_Name")["Quantity"].sum().sort_values(ascending=False).head(10)
+    fig = plt.figure()
+    plt.barh(top_products.index, top_products.values)
+    plt.gca().invert_yaxis()
+    plt.title("Top 10 Products by Quantity Sold")
+    st.pyplot(fig)
+    plt.close()
+
 elif page == "Elasticity":
     st.title("Price Elasticity Simulator")
 
     product = st.selectbox(
         "Select Product",
         sorted(df["Product_Name"].unique())
+    )
+
+    orig_price = df[df["Product_Name"] == product]["Original_Price"].mean()
+
+    st.markdown(
+        f'<p class="black-text"><b>Original price for "{product}" is {orig_price:.2f}</b></p>',
+        unsafe_allow_html=True
     )
 
     seg = df[df["Product_Name"] == product]
@@ -112,18 +128,10 @@ elif page == "Elasticity":
     r2 = r2_score(y_test, y_pred)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
-    st.subheader("Model Performance")
-    st.write(f"Elasticity: **{elasticity:.3f}**")
-    st.write(f"R² (test): **{r2:.3f}**")
-    st.write(f"RMSE (test): **{rmse:.3f}**")
-
-    # Interpretation
-    if elasticity < -1:
-        st.info("Demand is **elastic**. Price increases reduce revenue.")
-    elif -1 <= elasticity < 0:
-        st.info("Demand is **inelastic**. Price increases may increase revenue.")
-    else:
-        st.warning("Unusual elasticity. Interpret carefully.")
+    st.markdown('<h3 class="black-text">Model Performance</h3>', unsafe_allow_html=True)
+    st.markdown(f'<p class="black-text">Elasticity: <b>{elasticity:.3f}</b></p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="black-text">R² (test): <b>{r2:.3f}</b></p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="black-text">RMSE (test): <b>{rmse:.3f}</b></p>', unsafe_allow_html=True)
 
     base_price = seg["Selling_Price"].mean()
     base_qty = seg.groupby(seg["Date"].dt.to_period("M"))["Quantity"].sum().mean()
@@ -135,24 +143,29 @@ elif page == "Elasticity":
     )
 
     if st.button("Simulate Impact"):
-        pct_price_change = (new_price - base_price) / base_price
-        pct_qty_change = elasticity * pct_price_change
+        if np.isclose(new_price, base_price):
+            old_rev = base_price * base_qty
+            new_rev = old_rev
+            delta = 0.0
+        else:
+            pct_price_change = (new_price - base_price) / base_price
+            pct_qty_change = elasticity * pct_price_change
+            new_qty = base_qty * (1 + pct_qty_change)
 
-        new_qty = base_qty * (1 + pct_qty_change)
+            old_rev = base_price * base_qty
+            new_rev = new_price * new_qty
+            delta = new_rev - old_rev
 
-        old_rev = base_price * base_qty
-        new_rev = new_price * new_qty
-
-        delta = new_rev - old_rev
-
-        st.subheader("Revenue Impact")
-        st.write(f"Original revenue: **{old_rev:,.2f}**")
-        st.write(f"New revenue: **{new_rev:,.2f}**")
+        st.markdown('<h3 class="black-text">Revenue Impact</h3>', unsafe_allow_html=True)
+        st.markdown(f'<p class="black-text">Original revenue: <b>{old_rev:,.2f}</b></p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="black-text">New revenue: <b>{new_rev:,.2f}</b></p>', unsafe_allow_html=True)
 
         if delta > 0:
             st.success(f"Revenue increases by {delta:,.2f}")
-        else:
+        elif delta < 0:
             st.error(f"Revenue decreases by {delta:,.2f}")
+        else:
+            st.info("No price change → no revenue change")
 
     if st.button("Reset"):
         st.experimental_rerun()
